@@ -1,9 +1,11 @@
 require('dotenv').config();
 const { Client, IntentsBitField, EmbedBuilder } = require('discord.js');
-const { addReminder, getUserReminders, deleteReminder } = require('./storage');
+const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks } = require('./database');
 const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
-const { addTask, getUserTasks, removeTask, completeTask, clearAllTasks } = require('./tasks-storage');
+
+// Initialize database
+initDatabase();
 
 const client = new Client({
     intents: [

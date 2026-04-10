@@ -1,5 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
-const { getDueReminders, markReminderDelivered } = require('./storage');
+const { getDueReminders, markReminderDelivered } = require('./database');
 
 /**
  * Background task that checks for due reminders every 30 seconds

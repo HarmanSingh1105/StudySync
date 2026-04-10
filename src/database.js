@@ -18,7 +18,17 @@ function initDatabase() {
             created_at TEXT NOT NULL,
             due_at TEXT NOT NULL,
             delivered INTEGER DEFAULT 0
-        )
+        );
+        
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            task TEXT NOT NULL,
+            subject TEXT,
+            due_date TEXT,
+            completed INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
     `);
 }
 
@@ -88,6 +98,90 @@ function deleteReminder(reminderId, userId) {
     return true;
 }
 
+// ===== TASK FUNCTIONS =====
+
+// Add a new task
+function addTask(userId, taskText, subject, dueDate) {
+    const stmt = db.prepare(`
+        INSERT INTO tasks (user_id, task, subject, due_date, completed, created_at)
+        VALUES (?, ?, ?, ?, 0, ?)
+    `);
+    
+    const now = new Date().toISOString();
+    const result = stmt.run(userId, taskText, subject || null, dueDate || null, now);
+    
+    return {
+        id: result.lastInsertRowid,
+        user_id: userId,
+        task: taskText,
+        subject: subject || null,
+        due_date: dueDate || null,
+        completed: false,
+        created_at: now
+    };
+}
+
+// Get user's tasks
+function getUserTasks(userId) {
+    const stmt = db.prepare(`
+        SELECT id, task, subject, due_date, completed, created_at
+        FROM tasks
+        WHERE user_id = ?
+        ORDER BY id ASC
+    `);
+    
+    return stmt.all(userId);
+}
+
+// Mark task as completed
+function completeTask(taskId, userId) {
+    const checkStmt = db.prepare(`
+        SELECT user_id FROM tasks WHERE id = ?
+    `);
+    
+    const task = checkStmt.get(taskId);
+    if (!task || task.user_id !== userId) {
+        return false;
+    }
+    
+    const updateStmt = db.prepare(`
+        UPDATE tasks
+        SET completed = 1
+        WHERE id = ?
+    `);
+    
+    updateStmt.run(taskId);
+    return true;
+}
+
+// Remove a task
+function removeTask(taskId, userId) {
+    const checkStmt = db.prepare(`
+        SELECT user_id FROM tasks WHERE id = ?
+    `);
+    
+    const task = checkStmt.get(taskId);
+    if (!task || task.user_id !== userId) {
+        return false;
+    }
+    
+    const deleteStmt = db.prepare(`
+        DELETE FROM tasks WHERE id = ?
+    `);
+    
+    deleteStmt.run(taskId);
+    return true;
+}
+
+// Clear all user's tasks
+function clearAllTasks(userId) {
+    const stmt = db.prepare(`
+        DELETE FROM tasks WHERE user_id = ?
+    `);
+    
+    stmt.run(userId);
+}
+
 module.exports = {
     initDatabase,
     addReminder,
@@ -95,4 +189,9 @@ module.exports = {
     markReminderDelivered,
     getUserReminders,
     deleteReminder,
+    addTask,
+    getUserTasks,
+    completeTask,
+    removeTask,
+    clearAllTasks,
 };
