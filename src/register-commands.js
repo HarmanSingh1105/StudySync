@@ -224,6 +224,8 @@ const commands = [
     }
 ];
 
+"Testing commit message"
+
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {

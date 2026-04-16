@@ -1,5 +1,6 @@
 // Simple in-memory task storage (like reminders)
 let tasks = [];
+let taskDependencies = [];
 let nextId = 1;
 
 function addTask(userId, taskText, subject, dueDate) {
@@ -15,6 +16,24 @@ function addTask(userId, taskText, subject, dueDate) {
     
     tasks.push(newTask);
     return newTask;
+}
+
+function addTaskDependency(taskId, dependsOnId, userId) {
+  taskDependencies.push({
+    user_id: userId,
+    task_id: taskId,
+    depends_on: dependsOnId,
+  });
+}
+
+function getTaskDependencies(userId) {
+  return taskDependencies.filter(d => d.user_id === userId);
+}
+
+function clearDependenciesForTask(taskId) {
+  taskDependencies = taskDependencies.filter(
+    d => d.task_id !== taskId && d.depends_on !== taskId
+  );
 }
 
 function getUserTasks(userId) {
@@ -46,9 +65,14 @@ function clearAllTasks(userId) {
 }
 
 module.exports = {
-    addTask,
-    getUserTasks,
-    completeTask,
-    removeTask,
-    clearAllTasks
+
+  addTask,
+  getUserTasks,
+  completeTask,
+  removeTask,
+  clearAllTasks,
+  addTaskDependency,
+  getTaskDependencies,
+  clearDependenciesForTask
+
 };
