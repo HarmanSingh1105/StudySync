@@ -138,25 +138,25 @@ const commands = [
         options: [
             {
                 name: 'title',
-                description: 'Assignment or task name',
+                description: 'What assignment is due?',
                 type: ApplicationCommandOptionType.String,
                 required: true,
             },
             {
                 name: 'due_date',
-                description: 'Due date (YYYY-MM-DD or YYYY-MM-DD HH:mm)',
+                description: 'When? Format: YYYY-MM-DD or YYYY-MM-DD HH:mm (UTC)',
                 type: ApplicationCommandOptionType.String,
                 required: true,
             },
             {
                 name: 'subject',
-                description: 'Class or subject name (optional)',
+                description: 'Subject or course (optional)',
                 type: ApplicationCommandOptionType.String,
                 required: false,
             },
             {
                 name: 'notes',
-                description: 'Extra information (optional)',
+                description: 'Additional notes (optional)',
                 type: ApplicationCommandOptionType.String,
                 required: false,
             },
@@ -172,7 +172,7 @@ const commands = [
     },
     {
         name: 'removedeadline',
-        description: 'Remove an assignment deadline',
+        description: 'Remove a deadline',
         options: [
             {
                 name: 'deadline_id',
@@ -184,7 +184,7 @@ const commands = [
     },
     {
         name: 'updatedeadline',
-        description: 'Update an existing deadline',
+        description: 'Update an assignment deadline',
         options: [
             {
                 name: 'deadline_id',
@@ -194,7 +194,7 @@ const commands = [
             },
             {
                 name: 'title',
-                description: 'New assignment name (optional)',
+                description: 'New title (optional)',
                 type: ApplicationCommandOptionType.String,
                 required: false,
             },
@@ -206,7 +206,7 @@ const commands = [
             },
             {
                 name: 'subject',
-                description: 'New subject name (optional)',
+                description: 'New subject (optional)',
                 type: ApplicationCommandOptionType.String,
                 required: false,
             },
@@ -220,7 +220,7 @@ const commands = [
     },
     {
         name: 'cleardeadlines',
-        description: 'Remove all your assignment deadlines',
+        description: 'Delete all your deadlines (cannot be undone)',
     }
 ];
 

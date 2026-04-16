@@ -295,6 +295,7 @@ function mark1hReminderSent(deadlineId) {
 
 // Update a deadline
 function updateDeadline(deadlineId, userId, updates) {
+    // Check ownership first
     const checkStmt = db.prepare(`
         SELECT user_id FROM deadlines WHERE id = ?
     `);
@@ -304,8 +305,9 @@ function updateDeadline(deadlineId, userId, updates) {
         return false;
     }
     
-    let updateFields = [];
-    let values = [];
+    // Build update query dynamically
+    const updateFields = [];
+    const values = [];
     
     if (updates.title !== undefined) {
         updateFields.push('title = ?');
@@ -322,13 +324,17 @@ function updateDeadline(deadlineId, userId, updates) {
     if (updates.due_at !== undefined) {
         updateFields.push('due_at = ?');
         values.push(updates.due_at);
+        // Reset reminder flags when due_at is updated
+        updateFields.push('reminder_24h_sent = 0');
+        updateFields.push('reminder_1h_sent = 0');
     }
     
     if (updateFields.length === 0) {
-        return true;
+        return true; // Nothing to update
     }
     
     values.push(deadlineId);
+    
     const updateStmt = db.prepare(`
         UPDATE deadlines
         SET ${updateFields.join(', ')}

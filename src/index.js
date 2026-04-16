@@ -46,51 +46,7 @@ client.on('interactionCreate', (interaction) => {
 
         interaction.reply(`The sum of ${num1} and ${num2} is ${num1 + num2}`);
     }
-
-    //dependency command
-    const {
-        addTaskDependency
-    } = require('./tasks-storage');
-
-    if (interaction.commandName === 'adddependency') {
-        const taskId = interaction.options.getInteger('task_id');
-        const dependsOn = interaction.options.getInteger('depends_on');
-
-        addTaskDependency(taskId, dependsOn, interaction.user.id);
-
-        const schedule = buildScheduleForUser(interaction.user.id);
-        const result = schedule.finish();
-
-        if (result === -1) {
-            interaction.reply({
-                content: '⚠️ This dependency creates a cycle!',
-                ephemeral: true
-            });
-        } else {
-            interaction.reply({
-                content: '✅ Dependency added successfully.',
-                ephemeral: true
-            });
-        }
-    }
-
-    if (interaction.commandName === 'schedule') {
-        const schedule = buildScheduleForUser(interaction.user.id);
-        const finishTime = schedule.finish();
-
-        if (finishTime === -1) {
-            interaction.reply({
-                content: '❌ You have circular task dependencies.',
-                ephemeral: true
-            });
-        } else {
-            interaction.reply({
-                content: `✅ All tasks can be completed in ${finishTime} time units.`,
-                ephemeral: true
-            });
-        }
-    }
-
+    
     // Study remind command
     if (interaction.commandName === 'studyremind') {
         const title = interaction.options.getString('title');
@@ -365,18 +321,18 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-
+    
     // ===== ASSIGNMENT DEADLINE COMMANDS =====
-
+    
     // Add deadline command
     if (interaction.commandName === 'adddeadline') {
         const title = interaction.options.getString('title');
         const dueDate = interaction.options.getString('due_date');
         const subject = interaction.options.getString('subject');
         const notes = interaction.options.getString('notes');
-
+        
         const result = parseDeadlineDate(dueDate);
-
+        
         if (result.error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Invalid Date Format')
@@ -385,7 +341,7 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
             return;
         }
-
+        
         try {
             const deadlineId = addDeadline(
                 interaction.user.id,
@@ -396,7 +352,7 @@ client.on('interactionCreate', (interaction) => {
                 notes,
                 result.dueTime.toISOString()
             );
-
+            
             const embed = new EmbedBuilder()
                 .setTitle('✅ Deadline Added!')
                 .setColor(0x00ff00)
@@ -404,17 +360,17 @@ client.on('interactionCreate', (interaction) => {
                     { name: '📌 Assignment', value: title },
                     { name: '📅 Due', value: result.description }
                 );
-
+            
             if (subject) {
                 embed.addFields({ name: '📚 Subject', value: subject });
             }
             if (notes) {
                 embed.addFields({ name: '📝 Notes', value: notes });
             }
-
+            
             embed.addFields({ name: 'Deadline ID', value: `\`${deadlineId}\`` });
             embed.setFooter({ text: 'You\'ll get reminders 24h and 1h before the deadline!' });
-
+            
             interaction.reply({ embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
@@ -424,12 +380,12 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-
+    
     // View deadlines command
     if (interaction.commandName === 'deadlines') {
         try {
             const deadlines = getUserDeadlines(interaction.user.id);
-
+            
             if (deadlines.length === 0) {
                 const embed = new EmbedBuilder()
                     .setTitle('📌 Your Deadlines')
@@ -438,29 +394,29 @@ client.on('interactionCreate', (interaction) => {
                 interaction.reply({ embeds: [embed], ephemeral: true });
                 return;
             }
-
+            
             const embed = new EmbedBuilder()
                 .setTitle('📌 Your Assignment Deadlines')
                 .setColor(0x0099ff);
-
+            
             let deadlineList = '';
             for (const deadline of deadlines) {
                 const dueDate = new Date(deadline.due_at);
                 const now = new Date();
                 const hoursLeft = (dueDate - now) / (1000 * 60 * 60);
-
+                
                 let statusEmoji = '⏳';
                 if (hoursLeft < 0) statusEmoji = '❌';
                 else if (hoursLeft < 24) statusEmoji = '🔴';
                 else if (hoursLeft < 72) statusEmoji = '🟠';
-
+                
                 let deadlineInfo = `${statusEmoji} **${deadline.title}** (ID: \`${deadline.id}\`)`;
                 deadlineInfo += ` - Due: ${deadline.due_at}`;
                 if (deadline.subject) deadlineInfo += ` - ${deadline.subject}`;
-
+                
                 deadlineList += deadlineInfo + '\n';
             }
-
+            
             embed.setDescription(deadlineList);
             interaction.reply({ embeds: [embed], ephemeral: true });
         } catch (error) {
@@ -471,12 +427,12 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-
+    
     // View upcoming deadlines command
     if (interaction.commandName === 'upcoming') {
         try {
             const deadlines = getUpcomingDeadlines(interaction.user.id);
-
+            
             if (deadlines.length === 0) {
                 const embed = new EmbedBuilder()
                     .setTitle('📭 Upcoming Deadlines')
@@ -485,27 +441,27 @@ client.on('interactionCreate', (interaction) => {
                 interaction.reply({ embeds: [embed], ephemeral: true });
                 return;
             }
-
+            
             const embed = new EmbedBuilder()
                 .setTitle('⏰ Deadlines Due Within 7 Days')
                 .setColor(0xff9900);
-
+            
             let deadlineList = '';
             for (const deadline of deadlines) {
                 const dueDate = new Date(deadline.due_at);
                 const now = new Date();
                 const hoursLeft = (dueDate - now) / (1000 * 60 * 60);
                 const daysLeft = Math.floor(hoursLeft / 24);
-
+                
                 let timeStr = daysLeft > 0 ? `${daysLeft}d left` : `${Math.floor(hoursLeft)}h left`;
-
+                
                 let deadlineInfo = `📍 **${deadline.title}** - ${timeStr}`;
                 deadlineInfo += ` (ID: \`${deadline.id}\`)`;
                 if (deadline.subject) deadlineInfo += ` - ${deadline.subject}`;
-
+                
                 deadlineList += deadlineInfo + '\n';
             }
-
+            
             embed.setDescription(deadlineList);
             interaction.reply({ embeds: [embed], ephemeral: true });
         } catch (error) {
@@ -516,14 +472,14 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-
+    
     // Remove deadline command
     if (interaction.commandName === 'removedeadline') {
         const deadlineId = interaction.options.getInteger('deadline_id');
-
+        
         try {
             const success = removeDeadline(deadlineId, interaction.user.id);
-
+            
             if (success) {
                 const embed = new EmbedBuilder()
                     .setTitle('✅ Deadline Removed')
@@ -533,7 +489,7 @@ client.on('interactionCreate', (interaction) => {
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Deadline Not Found')
-                    .setDescription(`Deadline \`${deadlineId}\` not found. Use ` / deadlines` to see your deadline IDs.`)
+                    .setDescription(`Deadline \`${deadlineId}\` not found. Use `/deadlines` to see your deadline IDs.`)
                     .setColor(0xff0000);
                 interaction.reply({ embeds: [embed], ephemeral: true });
             }
@@ -545,7 +501,7 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-
+    
     // Update deadline command
     if (interaction.commandName === 'updatedeadline') {
         const deadlineId = interaction.options.getInteger('deadline_id');
@@ -553,13 +509,13 @@ client.on('interactionCreate', (interaction) => {
         const newDueDate = interaction.options.getString('due_date');
         const newSubject = interaction.options.getString('subject');
         const newNotes = interaction.options.getString('notes');
-
+        
         // Build update object with only provided values
         const updates = {};
         if (newTitle !== null) updates.title = newTitle;
         if (newSubject !== null) updates.subject = newSubject;
         if (newNotes !== null) updates.notes = newNotes;
-
+        
         if (newDueDate !== null) {
             const result = parseDeadlineDate(newDueDate);
             if (result.error) {
@@ -572,21 +528,21 @@ client.on('interactionCreate', (interaction) => {
             }
             updates.due_at = result.dueTime.toISOString();
         }
-
+        
         try {
             const success = updateDeadline(deadlineId, interaction.user.id, updates);
-
+            
             if (success) {
                 const embed = new EmbedBuilder()
                     .setTitle('✅ Deadline Updated')
                     .setColor(0x00ff00)
                     .setDescription(`Deadline \`${deadlineId}\` has been updated.`);
-
+                
                 if (newTitle) embed.addFields({ name: '📌 New Assignment', value: newTitle });
                 if (newDueDate) embed.addFields({ name: '📅 New Due Date', value: newDueDate });
                 if (newSubject) embed.addFields({ name: '📚 New Subject', value: newSubject });
                 if (newNotes) embed.addFields({ name: '📝 New Notes', value: newNotes });
-
+                
                 interaction.reply({ embeds: [embed], ephemeral: true });
             } else {
                 const embed = new EmbedBuilder()
@@ -603,12 +559,12 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-
+    
     // Clear deadlines command
     if (interaction.commandName === 'cleardeadlines') {
         try {
             clearAllDeadlines(interaction.user.id);
-
+            
             const embed = new EmbedBuilder()
                 .setTitle('🗑️ All Deadlines Cleared')
                 .setDescription('All your deadlines have been deleted.')
@@ -622,9 +578,7 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-
+    
 });
-
-client.login(process.env.TOKEN);
 
 client.login(process.env.TOKEN);

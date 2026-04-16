@@ -75,34 +75,6 @@ Mark a task as completed.
 #### `/cleartasks`
 Delete all your tasks (cannot be undone).
 
-### Assignment Deadlines
-
-#### `/adddeadline`
-Add an assignment deadline.
-- `title` (required): "Math Midterm"
-- `due_date` (required): "2026-04-20" or "2026-04-20 14:00"
-- `subject` (optional): "Calculus"
-- `notes` (optional): "Chapters 1-5"
-
-#### `/deadlines`
-View all your assignment deadlines.
-- Shows status emoji (⏳ normal, 🟠 72h, 🔴 24h, ❌ past)
-
-#### `/upcoming`
-View deadlines due within the next 7 days.
-- Sorted by nearest due date first
-
-#### `/updatedeadline`
-Update an existing deadline.
-- `deadline_id` (required): ID from `/deadlines`
-- Other fields optional
-
-#### `/removedeadline`
-Delete a specific deadline by ID.
-
-#### `/cleardeadlines`
-Delete all your deadlines (cannot be undone).
-
 ## Supported Time Formats
 
 | Format | Example |
@@ -119,13 +91,11 @@ StudySync/
 ├── src/
 │   ├── index.js              # Main bot file with all commands
 │   ├── register-commands.js  # Slash command registration
-│   ├── database.js           # SQLite database (reminders + tasks + deadlines)
-│   ├── reminder-parser.js    # Study reminder time format parsing
-│   ├── reminder-loop.js      # Background reminder checker
-│   ├── deadline-parser.js    # Assignment deadline date format parsing
-│   └── deadline-reminders.js # Background deadline reminder checker
+│   ├── database.js           # SQLite database (reminders + tasks)
+│   ├── reminder-parser.js    # Time format parsing
+│   └── reminder-loop.js      # Background reminder checker
 ├── data/
-│   └── reminders.db          # SQLite database (created automatically)
+│   └── studysync.db          # SQLite database (created automatically)
 ├── package.json
 └── .env                      # Your bot token
 ```
@@ -147,18 +117,8 @@ StudySync/
 3. User can view, complete, or delete tasks
 4. **Tasks persist across bot restarts** ✅
 
-### Assignment Deadlines
-1. User runs `/adddeadline` with assignment name and due date
-2. Bot validates the date format (YYYY-MM-DD or YYYY-MM-DD HH:mm)
-3. Deadline stored in SQLite database
-4. Background task checks every minute for due reminders
-5. Sends 24h before deadline and 1h before deadline
-6. Reminders sent via DM (fallback to channel)
-7. **Deadlines persist across bot restarts** ✅
-8. **Reminders tracked to prevent duplicates** ✅
-
 ### Database
 - Uses `better-sqlite3` for local SQLite storage
-- All data stored in `data/reminders.db`
+- All data stored in `data/studysync.db`
 - Automatic schema creation on startup
 - No external database server needed
