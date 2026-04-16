@@ -63,6 +63,18 @@ const commands = [
         description: 'View all your pending study reminders',
     },
     {
+        name: 'creategroup',
+        description: 'Create a study group with a private role and channel',
+        options: [
+            {
+                name: 'name',
+                description: 'Group name (for role and private channel)',
+                type: ApplicationCommandOptionType.String,
+                required: true,
+            },
+        ]
+    },
+    {
         name: 'cancelreminder',
         description: 'Cancel a pending study reminder',
         options: [

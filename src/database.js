@@ -43,6 +43,17 @@ function initDatabase() {
             reminder_24h_sent INTEGER DEFAULT 0,
             reminder_1h_sent INTEGER DEFAULT 0
         );
+
+        CREATE TABLE IF NOT EXISTS groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            owner_user_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(guild_id, name)
+        );
     `);
 }
 
@@ -367,6 +378,40 @@ function clearAllDeadlines(userId) {
     stmt.run(userId);
 }
 
+// ===== GROUP FUNCTIONS =====
+
+// Create a group mapping for a guild
+function createGroup(guildId, name, roleId, channelId, ownerUserId) {
+    const stmt = db.prepare(`
+        INSERT INTO groups (guild_id, name, role_id, channel_id, owner_user_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date().toISOString();
+    const result = stmt.run(guildId, name, roleId, channelId, ownerUserId, now);
+
+    return {
+        id: result.lastInsertRowid,
+        guild_id: guildId,
+        name,
+        role_id: roleId,
+        channel_id: channelId,
+        owner_user_id: ownerUserId,
+        created_at: now,
+    };
+}
+
+// Check if group name already exists in this guild
+function getGroupByName(guildId, name) {
+    const stmt = db.prepare(`
+        SELECT id, guild_id, name, role_id, channel_id, owner_user_id, created_at
+        FROM groups
+        WHERE guild_id = ? AND LOWER(name) = LOWER(?)
+    `);
+
+    return stmt.get(guildId, name);
+}
+
 module.exports = {
     initDatabase,
     addReminder,
@@ -389,4 +434,6 @@ module.exports = {
     updateDeadline,
     removeDeadline,
     clearAllDeadlines,
+    createGroup,
+    getGroupByName,
 };

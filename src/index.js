@@ -1,6 +1,6 @@
 require('dotenv').config();
-const { Client, IntentsBitField, EmbedBuilder } = require('discord.js');
-const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines } = require('./database');
+const { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ChannelType } = require('discord.js');
+const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName } = require('./database');
 const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
 const { parseDeadlineDate } = require('./deadline-parser');
@@ -37,7 +37,7 @@ client.on('messageCreate', (message) => {
     }
 });
 
-client.on('interactionCreate', (interaction) => {
+client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'add') {
@@ -165,6 +165,135 @@ client.on('interactionCreate', (interaction) => {
                 .setDescription(`Failed to cancel reminder: ${error.message}`)
                 .setColor(0xff0000);
             interaction.reply({ embeds: [embed] });
+        }
+    }
+
+    // Create group command
+    if (interaction.commandName === 'creategroup') {
+        if (!interaction.inGuild() || !interaction.guild) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Server Only Command')
+                .setDescription('`/creategroup` can only be used inside a server.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const groupName = interaction.options.getString('name')?.trim();
+        if (!groupName) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Invalid Group Name')
+                .setDescription('Please provide a non-empty group name.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const botMember = interaction.guild.members.me;
+        if (!botMember) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Bot State Error')
+                .setDescription('Could not verify bot permissions in this server.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const hasManageRoles = botMember.permissions.has(PermissionsBitField.Flags.ManageRoles);
+        const hasManageChannels = botMember.permissions.has(PermissionsBitField.Flags.ManageChannels);
+        if (!hasManageRoles || !hasManageChannels) {
+            const missing = [];
+            if (!hasManageRoles) missing.push('Manage Roles');
+            if (!hasManageChannels) missing.push('Manage Channels');
+
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Missing Bot Permissions')
+                .setDescription(`I need these permissions to create a group: **${missing.join(', ')}**.`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        try {
+            const existingGroup = getGroupByName(interaction.guild.id, groupName);
+            if (existingGroup) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Group Already Exists')
+                    .setDescription(`A group named **${groupName}** already exists in this server.`)
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            const safeChannelSuffix = groupName
+                .toLowerCase()
+                .replace(/[^a-z0-9 -]/g, '')
+                .replace(/\s+/g, '-')
+                .slice(0, 80);
+            const channelName = `group-${safeChannelSuffix || 'study-group'}`;
+
+            let createdRole = null;
+            let createdChannel = null;
+
+            try {
+                createdRole = await interaction.guild.roles.create({
+                    name: groupName,
+                    reason: `Study group created by ${interaction.user.tag}`,
+                });
+
+                createdChannel = await interaction.guild.channels.create({
+                    name: channelName,
+                    type: ChannelType.GuildText,
+                    reason: `Private study group channel for ${groupName}`,
+                    permissionOverwrites: [
+                        {
+                            id: interaction.guild.roles.everyone.id,
+                            deny: [PermissionsBitField.Flags.ViewChannel],
+                        },
+                        {
+                            id: createdRole.id,
+                            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory],
+                        },
+                    ],
+                });
+
+                createGroup(
+                    interaction.guild.id,
+                    groupName,
+                    createdRole.id,
+                    createdChannel.id,
+                    interaction.user.id
+                );
+            } catch (error) {
+                if (createdChannel) {
+                    try {
+                        await createdChannel.delete('Rolling back failed group creation');
+                    } catch (_) {}
+                }
+                if (createdRole) {
+                    try {
+                        await createdRole.delete('Rolling back failed group creation');
+                    } catch (_) {}
+                }
+                throw error;
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Group Created')
+                .setColor(0x00ff00)
+                .setDescription(`Created **${groupName}** successfully.`)
+                .addFields(
+                    { name: 'Role', value: `<@&${createdRole.id}>`, inline: true },
+                    { name: 'Channel', value: `<#${createdChannel.id}>`, inline: true }
+                );
+
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to create group: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
     
