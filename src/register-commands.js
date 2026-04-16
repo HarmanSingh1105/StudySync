@@ -131,6 +131,28 @@ const commands = [
         name: 'cleartasks',
         description: 'Delete all your tasks (cannot be undone)',
     },
+    {
+        name: 'adddependency',
+        description: 'Add a dependency between two tasks',
+        options: [
+            {
+                name: 'task_id',
+                description: 'The ID of the task that depends on another task',
+                type: ApplicationCommandOptionType.Integer,
+                required: true,
+            },
+            {
+                name: 'depends_on',
+                description: 'The ID of the task it depends on',
+                type: ApplicationCommandOptionType.Integer,
+                required: true,
+            },
+        ]
+    },
+    {
+        name: 'schedule',
+        description: 'Check if your task schedule is valid (no circular dependencies)',
+    },
     // ===== ASSIGNMENT DEADLINE COMMANDS =====
     {
         name: 'adddeadline',

@@ -5,6 +5,7 @@ const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
 const { parseDeadlineDate } = require('./deadline-parser');
 const { startDeadlineReminderLoop } = require('./deadline-reminders');
+const { buildScheduleForUser } = require('./scheduleHelper');
 
 // Initialize database
 initDatabase();
@@ -115,6 +116,52 @@ client.on('interactionCreate', (interaction) => {
             interaction.reply({ embeds: [embed] });
         }
     }
+
+
+    //dependency command
+    const {
+        addTaskDependency
+    } = require('./tasks-storage');
+
+    if (interaction.commandName === 'adddependency') {
+        const taskId = interaction.options.getInteger('task_id');
+        const dependsOn = interaction.options.getInteger('depends_on');
+
+        addTaskDependency(taskId, dependsOn, interaction.user.id);
+
+        const schedule = buildScheduleForUser(interaction.user.id);
+        const result = schedule.finish();
+
+        if (result === -1) {
+            interaction.reply({
+                content: '⚠️ This dependency creates a cycle!',
+                ephemeral: true
+            });
+        } else {
+            interaction.reply({
+                content: '✅ Dependency added successfully.',
+                ephemeral: true
+            });
+        }
+    }
+
+    if (interaction.commandName === 'schedule') {
+        const schedule = buildScheduleForUser(interaction.user.id);
+        const finishTime = schedule.finish();
+
+        if (finishTime === -1) {
+            interaction.reply({
+                content: '❌ You have circular task dependencies.',
+                ephemeral: true
+            });
+        } else {
+            interaction.reply({
+                content: `✅ All tasks can be completed in ${finishTime} time units.`,
+                ephemeral: true
+            });
+        }
+    }
+
 
     // My reminders command
     if (interaction.commandName === 'myreminders') {
