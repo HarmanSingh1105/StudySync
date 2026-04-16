@@ -27,7 +27,7 @@ client.on('clientReady', (c) => {
     startDeadlineReminderLoop(c);
 });
 
-client.on('messageCreate', (message) => {
+client.on('messageCreate', async(message) => {
     if (message.author.bot) {
         return;
     }
@@ -35,6 +35,20 @@ client.on('messageCreate', (message) => {
     if (message.content === 'hello') {
         message.reply('Hello, how can I help you?');
     }
+
+    if (message.content === '!create-channel') {
+    try {
+      const channel = await message.guild.channels.create({
+        name: 'new-text-channel',
+        type: ChannelType.GuildText, // Specifies a text channel
+        reason: 'Bot created this channel'
+      });
+      message.reply(`Successfully created channel: ${channel.name}`);
+    } catch (error) {
+      console.error(error);
+      message.reply('There was an error creating the channel.');
+    }
+  }
 });
 
 client.on('interactionCreate', (interaction) => {
