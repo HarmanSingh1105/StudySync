@@ -43,6 +43,16 @@ function initDatabase() {
             reminder_24h_sent INTEGER DEFAULT 0,
             reminder_1h_sent INTEGER DEFAULT 0
         );
+        
+        CREATE TABLE IF NOT EXISTS task_dependencies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            task_id INTEGER NOT NULL,
+            depends_on INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY(depends_on) REFERENCES tasks(id) ON DELETE CASCADE
+        );
     `);
 }
 
@@ -373,6 +383,103 @@ function clearAllDeadlines(userId) {
     stmt.run(userId);
 }
 
+// ===== TASK DEPENDENCIES =====
+
+// Add a dependency between two tasks
+function addTaskDependency(taskId, dependsOnId, userId) {
+    // Verify both tasks belong to the user
+    const taskStmt = db.prepare(`SELECT user_id FROM tasks WHERE id = ?`);
+    const task1 = taskStmt.get(taskId);
+    const task2 = taskStmt.get(dependsOnId);
+    
+    if (!task1 || task1.user_id !== userId || !task2 || task2.user_id !== userId) {
+        throw new Error('Invalid task IDs or ownership mismatch');
+    }
+    
+    // Check if dependency already exists
+    const existsStmt = db.prepare(`
+        SELECT id FROM task_dependencies 
+        WHERE user_id = ? AND task_id = ? AND depends_on = ?
+    `);
+    
+    if (existsStmt.get(userId, taskId, dependsOnId)) {
+        throw new Error('Dependency already exists');
+    }
+    
+    const stmt = db.prepare(`
+        INSERT INTO task_dependencies (user_id, task_id, depends_on, created_at)
+        VALUES (?, ?, ?, ?)
+    `);
+    
+    const now = new Date().toISOString();
+    const result = stmt.run(userId, taskId, dependsOnId, now);
+    return result.lastInsertRowid;
+}
+
+// Get all dependencies for a user
+function getTaskDependencies(userId) {
+    const stmt = db.prepare(`
+        SELECT id, task_id, depends_on, created_at
+        FROM task_dependencies
+        WHERE user_id = ?
+        ORDER BY created_at ASC
+    `);
+    
+    return stmt.all(userId);
+}
+
+// Clear dependencies for a specific task (when task is deleted)
+function clearDependenciesForTask(taskId) {
+    const stmt = db.prepare(`
+        DELETE FROM task_dependencies 
+        WHERE task_id = ? OR depends_on = ?
+    `);
+    
+    stmt.run(taskId, taskId);
+}
+
+// Check if there are cyclic dependencies
+function hasCyclicDependencies(userId) {
+    const dependencies = getTaskDependencies(userId);
+    if (dependencies.length === 0) return false;
+    
+    const graph = {};
+    for (const dep of dependencies) {
+        if (!graph[dep.task_id]) graph[dep.task_id] = [];
+        graph[dep.task_id].push(dep.depends_on);
+    }
+    
+    // DFS to detect cycle
+    const visited = new Set();
+    const recursionStack = new Set();
+    
+    function hasCycle(node) {
+        visited.add(node);
+        recursionStack.add(node);
+        
+        if (graph[node]) {
+            for (const neighbor of graph[node]) {
+                if (!visited.has(neighbor)) {
+                    if (hasCycle(neighbor)) return true;
+                } else if (recursionStack.has(neighbor)) {
+                    return true;
+                }
+            }
+        }
+        
+        recursionStack.delete(node);
+        return false;
+    }
+    
+    for (const node in graph) {
+        if (!visited.has(node)) {
+            if (hasCycle(node)) return true;
+        }
+    }
+    
+    return false;
+}
+
 module.exports = {
     initDatabase,
     addReminder,
@@ -395,4 +502,8 @@ module.exports = {
     updateDeadline,
     removeDeadline,
     clearAllDeadlines,
+    addTaskDependency,
+    getTaskDependencies,
+    clearDependenciesForTask,
+    hasCyclicDependencies,
 };

@@ -1,11 +1,10 @@
 require('dotenv').config();
 const { Client, IntentsBitField, EmbedBuilder } = require('discord.js');
-const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines } = require('./database');
+const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, addTaskDependency, getTaskDependencies, hasCyclicDependencies } = require('./database');
 const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
 const { parseDeadlineDate } = require('./deadline-parser');
 const { startDeadlineReminderLoop } = require('./deadline-reminders');
-const { buildScheduleForUser } = require('./scheduleHelper');
 
 // Initialize database
 initDatabase();
@@ -114,51 +113,6 @@ client.on('interactionCreate', (interaction) => {
                 .setDescription(`Failed to create reminder: ${error.message}`)
                 .setColor(0xff0000);
             interaction.reply({ embeds: [embed] });
-        }
-    }
-
-
-    //dependency command
-    const {
-        addTaskDependency
-    } = require('./tasks-storage');
-
-    if (interaction.commandName === 'adddependency') {
-        const taskId = interaction.options.getInteger('task_id');
-        const dependsOn = interaction.options.getInteger('depends_on');
-
-        addTaskDependency(taskId, dependsOn, interaction.user.id);
-
-        const schedule = buildScheduleForUser(interaction.user.id);
-        const result = schedule.finish();
-
-        if (result === -1) {
-            interaction.reply({
-                content: '⚠️ This dependency creates a cycle!',
-                ephemeral: true
-            });
-        } else {
-            interaction.reply({
-                content: '✅ Dependency added successfully.',
-                ephemeral: true
-            });
-        }
-    }
-
-    if (interaction.commandName === 'schedule') {
-        const schedule = buildScheduleForUser(interaction.user.id);
-        const finishTime = schedule.finish();
-
-        if (finishTime === -1) {
-            interaction.reply({
-                content: '❌ You have circular task dependencies.',
-                ephemeral: true
-            });
-        } else {
-            interaction.reply({
-                content: `✅ All tasks can be completed in ${finishTime} time units.`,
-                ephemeral: true
-            });
         }
     }
 
@@ -378,6 +332,75 @@ client.on('interactionCreate', (interaction) => {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to clear tasks: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+    
+    // ===== TASK DEPENDENCY COMMANDS =====
+    
+    // Add task dependency command
+    if (interaction.commandName === 'adddependency') {
+        const taskId = interaction.options.getInteger('task_id');
+        const dependsOn = interaction.options.getInteger('depends_on');
+        
+        try {
+            addTaskDependency(taskId, dependsOn, interaction.user.id);
+            
+            // Check for cycles after adding
+            if (hasCyclicDependencies(interaction.user.id)) {
+                const embed = new EmbedBuilder()
+                    .setTitle('⚠️ Circular Dependency Detected!')
+                    .setDescription(`Task \`${taskId}\` → Task \`${dependsOn}\` creates a cycle.`)
+                    .setColor(0xff9900);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            } else {
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Dependency Added')
+                    .setDescription(`Task \`${taskId}\` now depends on Task \`${dependsOn}\`.`)
+                    .setColor(0x00ff00);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to add dependency: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+    
+    // Schedule/validate command
+    if (interaction.commandName === 'schedule') {
+        try {
+            if (hasCyclicDependencies(interaction.user.id)) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Circular Dependencies Found')
+                    .setDescription('You have circular task dependencies. Resolve them first!')
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            } else {
+                const dependencies = getTaskDependencies(interaction.user.id);
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Schedule Valid')
+                    .setColor(0x00ff00);
+                
+                if (dependencies.length === 0) {
+                    embed.setDescription('No dependencies found. All tasks can be done independently!');
+                } else {
+                    let depList = '';
+                    for (const dep of dependencies) {
+                        depList += `Task \`${dep.task_id}\` depends on Task \`${dep.depends_on}\`\n`;
+                    }
+                    embed.setDescription(`Your task dependencies are valid:\n\n${depList}`);
+                }
+                
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to validate schedule: ${error.message}`)
                 .setColor(0xff0000);
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
