@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ChannelType } = require('discord.js');
-const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName, addTaskDependency, getTaskDependencies, hasCyclicDependencies } = require('./database');
+const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName, listGroupsByGuild, addTaskDependency, getTaskDependencies, hasCyclicDependencies } = require('./database');
 const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
 const { parseDeadlineDate } = require('./deadline-parser');
@@ -307,6 +307,95 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to create group: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+
+    // Join group command
+    if (interaction.commandName === 'joingroup') {
+        if (!interaction.inGuild() || !interaction.guild) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Server Only Command')
+                .setDescription('`/joingroup` can only be used inside a server.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const groupName = interaction.options.getString('name')?.trim();
+        if (!groupName) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Invalid Group Name')
+                .setDescription('Please provide a non-empty group name.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const botMember = interaction.guild.members.me;
+        if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Missing Bot Permissions')
+                .setDescription('I need **Manage Roles** permission to add you to a group.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        try {
+            const groups = listGroupsByGuild(interaction.guild.id);
+            if (groups.length === 0) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Group Does Not Exist')
+                    .setDescription('No groups exist in this server yet. Create one with `/creategroup` first.')
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            const targetGroup = getGroupByName(interaction.guild.id, groupName);
+            if (!targetGroup) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Group Does Not Exist')
+                    .setDescription(`Group **${groupName}** does not exist.`)
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            const role = await interaction.guild.roles.fetch(targetGroup.role_id);
+            if (!role) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Group Configuration Error')
+                    .setDescription('This group is missing its role. Ask an admin to recreate the group.')
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            const member = await interaction.guild.members.fetch(interaction.user.id);
+            if (member.roles.cache.has(role.id)) {
+                const embed = new EmbedBuilder()
+                    .setTitle('ℹ️ Already In Group')
+                    .setDescription(`You are already a member of **${targetGroup.name}**.`)
+                    .setColor(0x0099ff);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            await member.roles.add(role, `Joined group ${targetGroup.name}`);
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Joined Group')
+                .setDescription(`You joined **${targetGroup.name}** successfully.`)
+                .addFields({ name: 'Group Role', value: `<@&${role.id}>` })
+                .setColor(0x00ff00);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to join group: ${error.message}`)
                 .setColor(0xff0000);
             interaction.reply({ embeds: [embed], ephemeral: true });
         }

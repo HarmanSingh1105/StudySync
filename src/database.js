@@ -428,6 +428,18 @@ function getGroupByName(guildId, name) {
     return stmt.get(guildId, name);
 }
 
+// List all groups for a guild
+function listGroupsByGuild(guildId) {
+    const stmt = db.prepare(`
+        SELECT id, guild_id, name, role_id, channel_id, owner_user_id, created_at
+        FROM groups
+        WHERE guild_id = ?
+        ORDER BY name ASC
+    `);
+
+    return stmt.all(guildId);
+}
+
 // ===== TASK DEPENDENCIES =====
 
 // Add a dependency between two tasks
@@ -549,6 +561,7 @@ module.exports = {
     clearAllDeadlines,
     createGroup,
     getGroupByName,
+    listGroupsByGuild,
     addTaskDependency,
     getTaskDependencies,
     clearDependenciesForTask,

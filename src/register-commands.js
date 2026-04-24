@@ -75,6 +75,18 @@ const commands = [
         ]
     },
     {
+        name: 'joingroup',
+        description: 'Join an existing study group by name',
+        options: [
+            {
+                name: 'name',
+                description: 'The exact group name you want to join',
+                type: ApplicationCommandOptionType.String,
+                required: true,
+            },
+        ]
+    },
+    {
         name: 'cancelreminder',
         description: 'Cancel a pending study reminder',
         options: [
