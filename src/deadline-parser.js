@@ -1,63 +1,62 @@
-/**
- * Parse user date input into a valid datetime
- * Supports formats:
- * - YYYY-MM-DD
- * - YYYY-MM-DD HH:mm
- */
+// Parse deadline date formats
+function parseDeadlineDate(dateStr) {
+    if (!dateStr) {
+        return { error: 'Date is required' };
+    }
 
-function parseDeadlineDate(dateInput) {
-    dateInput = dateInput.trim();
-    
-    // Try YYYY-MM-DD HH:mm format
-    if (/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(dateInput)) {
-        return parseDateWithTime(dateInput);
+    // Trim whitespace
+    dateStr = dateStr.trim();
+
+    // Check format: YYYY-MM-DD or YYYY-MM-DD HH:mm
+    const dateRegex = /^(\d{4})-(\d{2})-(\d{2})(?:\s(\d{2}):(\d{2}))?$/;
+    const match = dateStr.match(dateRegex);
+
+    if (!match) {
+        return {
+            error: 'Invalid date format. Use YYYY-MM-DD or YYYY-MM-DD HH:mm (e.g., 2026-04-15 or 2026-04-15 14:00)'
+        };
     }
-    
-    // Try YYYY-MM-DD format (assume 23:59:59)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
-        return parseDateOnly(dateInput);
+
+    const year = parseInt(match[1]);
+    const month = parseInt(match[2]);
+    const day = parseInt(match[3]);
+    const hour = match[4] ? parseInt(match[4]) : 23;
+    const minute = match[5] ? parseInt(match[5]) : 59;
+
+    // Validate month and day
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+        return { error: 'Invalid month or day' };
     }
-    
-    return {
-        error: `❌ Invalid date format: \`${dateInput}\`\n\nSupported formats:\n• \`YYYY-MM-DD\` (deadline at 11:59pm UTC)\n• \`YYYY-MM-DD HH:mm\` (specific time in UTC)`
+
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return { error: 'Invalid hour or minute' };
+    }
+
+    // Create date in UTC
+    const dueTime = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+
+    // Check if date is in the past
+    const now = new Date();
+    if (dueTime <= now) {
+        return { error: 'Deadline cannot be in the past' };
+    }
+
+    // Create readable description
+    const options = {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'UTC',
+        hour12: true
     };
-}
+    const description = dueTime.toLocaleString('en-US', options);
 
-function parseDateWithTime(dateInput) {
-    try {
-        const dueTime = new Date(`${dateInput}:00Z`);
-        const now = new Date();
-        
-        if (dueTime <= now) {
-            return { error: "❌ Deadline cannot be in the past" };
-        }
-        
-        return {
-            dueTime,
-            description: dueTime.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
-        };
-    } catch (e) {
-        return { error: "Invalid date/time format" };
-    }
-}
-
-function parseDateOnly(dateInput) {
-    try {
-        // Parse as YYYY-MM-DD and set to 23:59:59 UTC
-        const dueTime = new Date(`${dateInput}T23:59:59Z`);
-        const now = new Date();
-        
-        if (dueTime <= now) {
-            return { error: "❌ Deadline cannot be in the past" };
-        }
-        
-        return {
-            dueTime,
-            description: dateInput + ' (11:59pm UTC)'
-        };
-    } catch (e) {
-        return { error: "Invalid date format" };
-    }
+    return {
+        dueTime: dueTime,
+        description: `${description} UTC`
+    };
 }
 
 module.exports = { parseDeadlineDate };

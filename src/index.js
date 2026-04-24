@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ChannelType } = require('discord.js');
-const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName } = require('./database');
+const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName, addTaskDependency, getTaskDependencies, hasCyclicDependencies } = require('./database');
 const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
 const { parseDeadlineDate } = require('./deadline-parser');
@@ -27,14 +27,28 @@ client.on('clientReady', (c) => {
     startDeadlineReminderLoop(c);
 });
 
-client.on('messageCreate', (message) => {
+client.on('messageCreate', async(message) => {
     if (message.author.bot) {
         return;
     }
 
-    if(message.content === 'hello') {
+    if (message.content === 'hello') {
         message.reply('Hello, how can I help you?');
     }
+
+    if (message.content === '!create-channel') {
+    try {
+      const channel = await message.guild.channels.create({
+        name: 'new-text-channel',
+        type: ChannelType.GuildText, // Specifies a text channel
+        reason: 'Bot created this channel'
+      });
+      message.reply(`Successfully created channel: ${channel.name}`);
+    } catch (error) {
+      console.error(error);
+      message.reply('There was an error creating the channel.');
+    }
+  }
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -52,10 +66,10 @@ client.on('interactionCreate', async (interaction) => {
         const title = interaction.options.getString('title');
         const reminderTime = interaction.options.getString('reminder_time');
         const notes = interaction.options.getString('notes');
-        
+
         // Parse the time
         const result = parseReminderTime(reminderTime);
-        
+
         if (result.error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Invalid Time Format')
@@ -64,7 +78,7 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed] });
             return;
         }
-        
+
         try {
             const now = new Date().toISOString();
             const reminderId = addReminder(
@@ -76,7 +90,7 @@ client.on('interactionCreate', async (interaction) => {
                 now,
                 result.dueTime.toISOString()
             );
-            
+
             const embed = new EmbedBuilder()
                 .setTitle('✅ Reminder Set!')
                 .setColor(0x00ff00)
@@ -84,14 +98,14 @@ client.on('interactionCreate', async (interaction) => {
                     { name: '📚 Study Topic', value: title },
                     { name: '🕐 When', value: result.description }
                 );
-            
+
             if (notes) {
                 embed.addFields({ name: '📝 Notes', value: notes });
             }
-            
+
             embed.addFields({ name: 'Reminder ID', value: `\`${reminderId}\`` });
             embed.setFooter({ text: "You'll receive a DM when it's time! (or a channel message if DMs are disabled)" });
-            
+
             interaction.reply({ embeds: [embed] });
         } catch (error) {
             const embed = new EmbedBuilder()
@@ -101,12 +115,13 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed] });
         }
     }
-    
+
+
     // My reminders command
     if (interaction.commandName === 'myreminders') {
         try {
             const reminders = getUserReminders(interaction.user.id);
-            
+
             if (reminders.length === 0) {
                 const embed = new EmbedBuilder()
                     .setTitle('📚 Your Reminders')
@@ -115,11 +130,11 @@ client.on('interactionCreate', async (interaction) => {
                 interaction.reply({ embeds: [embed] });
                 return;
             }
-            
+
             const embed = new EmbedBuilder()
                 .setTitle('📚 Your Pending Reminders')
                 .setColor(0x0099ff);
-            
+
             for (const [id, title, notes, dueAt] of reminders) {
                 let fieldValue = `**When:** ${dueAt}\n**ID:** \`${id}\``;
                 if (notes) {
@@ -127,9 +142,9 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 embed.addFields({ name: title, value: fieldValue });
             }
-            
+
             embed.setFooter({ text: 'Use /cancelreminder to delete one.' });
-            
+
             interaction.reply({ embeds: [embed] });
         } catch (error) {
             const embed = new EmbedBuilder()
@@ -139,13 +154,13 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed] });
         }
     }
-    
+
     // Cancel reminder command
     if (interaction.commandName === 'cancelreminder') {
         try {
             const reminderId = interaction.options.getInteger('reminder_id');
             const success = deleteReminder(reminderId, interaction.user.id);
-            
+
             if (success) {
                 const embed = new EmbedBuilder()
                     .setTitle('✅ Reminder Cancelled')
@@ -296,18 +311,17 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-    
     // ===== STUDY TO-DO LIST COMMANDS =====
-    
+
     // Add task command
     if (interaction.commandName === 'addtask') {
         const taskText = interaction.options.getString('task');
         const subject = interaction.options.getString('subject');
         const dueDate = interaction.options.getString('due_date');
-        
+
         try {
             const newTask = addTask(interaction.user.id, taskText, subject, dueDate);
-            
+
             const embed = new EmbedBuilder()
                 .setTitle('✅ Task Added!')
                 .setColor(0x00ff00)
@@ -315,14 +329,14 @@ client.on('interactionCreate', async (interaction) => {
                     { name: '📝 Task', value: taskText },
                     { name: 'Task ID', value: `\`${newTask.id}\`` }
                 );
-            
+
             if (subject) {
                 embed.addFields({ name: '📚 Subject', value: subject });
             }
             if (dueDate) {
                 embed.addFields({ name: '📅 Due Date', value: dueDate });
             }
-            
+
             interaction.reply({ embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
@@ -332,12 +346,12 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-    
+
     // View tasks command
     if (interaction.commandName === 'tasks') {
         try {
             const userTasks = getUserTasks(interaction.user.id);
-            
+
             if (userTasks.length === 0) {
                 const embed = new EmbedBuilder()
                     .setTitle('📝 Your Tasks')
@@ -346,23 +360,23 @@ client.on('interactionCreate', async (interaction) => {
                 interaction.reply({ embeds: [embed], ephemeral: true });
                 return;
             }
-            
+
             const embed = new EmbedBuilder()
                 .setTitle('📝 Your Study Tasks')
                 .setColor(0x0099ff);
-            
+
             let taskList = '';
             for (const task of userTasks) {
                 const checkbox = task.completed ? '✅' : '⬜';
                 const taskDisplay = task.completed ? `~~${task.task}~~` : task.task;
-                
+
                 let taskInfo = `${checkbox} **${taskDisplay}** (ID: \`${task.id}\`)`;
                 if (task.subject) taskInfo += ` - ${task.subject}`;
                 if (task.due_date) taskInfo += ` - Due: ${task.due_date}`;
-                
+
                 taskList += taskInfo + '\n';
             }
-            
+
             embed.setDescription(taskList);
             interaction.reply({ embeds: [embed], ephemeral: true });
         } catch (error) {
@@ -373,14 +387,14 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-    
+
     // Remove task command
     if (interaction.commandName === 'removetask') {
         const taskId = interaction.options.getInteger('task_id');
-        
+
         try {
             const success = removeTask(taskId, interaction.user.id);
-            
+
             if (success) {
                 const embed = new EmbedBuilder()
                     .setTitle('✅ Task Removed')
@@ -390,7 +404,7 @@ client.on('interactionCreate', async (interaction) => {
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Task Not Found')
-                    .setDescription(`Task \`${taskId}\` not found. Use `/tasks` to see your task IDs.`)
+                    .setDescription(`Task \`${taskId}\` not found. Use \`/tasks\` to see your task IDs.`)
                     .setColor(0xff0000);
                 interaction.reply({ embeds: [embed], ephemeral: true });
             }
@@ -402,14 +416,14 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-    
+
     // Complete task command
     if (interaction.commandName === 'completetask') {
         const taskId = interaction.options.getInteger('task_id');
-        
+
         try {
             const success = completeTask(taskId, interaction.user.id);
-            
+
             if (success) {
                 const embed = new EmbedBuilder()
                     .setTitle('✅ Task Completed!')
@@ -419,7 +433,7 @@ client.on('interactionCreate', async (interaction) => {
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Task Not Found')
-                    .setDescription(`Task \`${taskId}\` not found. Use `/tasks` to see your task IDs.`)
+                    .setDescription(`Task \`${taskId}\` not found. Use \`/tasks\` to see your task IDs.`)
                     .setColor(0xff0000);
                 interaction.reply({ embeds: [embed], ephemeral: true });
             }
@@ -431,12 +445,12 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
-    
+
     // Clear all tasks command
     if (interaction.commandName === 'cleartasks') {
         try {
             clearAllTasks(interaction.user.id);
-            
+
             const embed = new EmbedBuilder()
                 .setTitle('🗑️ All Tasks Cleared')
                 .setDescription('All your tasks have been deleted.')
@@ -446,6 +460,75 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to clear tasks: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+    
+    // ===== TASK DEPENDENCY COMMANDS =====
+    
+    // Add task dependency command
+    if (interaction.commandName === 'adddependency') {
+        const taskId = interaction.options.getInteger('task_id');
+        const dependsOn = interaction.options.getInteger('depends_on');
+        
+        try {
+            addTaskDependency(taskId, dependsOn, interaction.user.id);
+            
+            // Check for cycles after adding
+            if (hasCyclicDependencies(interaction.user.id)) {
+                const embed = new EmbedBuilder()
+                    .setTitle('⚠️ Circular Dependency Detected!')
+                    .setDescription(`Task \`${taskId}\` → Task \`${dependsOn}\` creates a cycle.`)
+                    .setColor(0xff9900);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            } else {
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Dependency Added')
+                    .setDescription(`Task \`${taskId}\` now depends on Task \`${dependsOn}\`.`)
+                    .setColor(0x00ff00);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to add dependency: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+    
+    // Schedule/validate command
+    if (interaction.commandName === 'schedule') {
+        try {
+            if (hasCyclicDependencies(interaction.user.id)) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Circular Dependencies Found')
+                    .setDescription('You have circular task dependencies. Resolve them first!')
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            } else {
+                const dependencies = getTaskDependencies(interaction.user.id);
+                const embed = new EmbedBuilder()
+                    .setTitle('✅ Schedule Valid')
+                    .setColor(0x00ff00);
+                
+                if (dependencies.length === 0) {
+                    embed.setDescription('No dependencies found. All tasks can be done independently!');
+                } else {
+                    let depList = '';
+                    for (const dep of dependencies) {
+                        depList += `Task \`${dep.task_id}\` depends on Task \`${dep.depends_on}\`\n`;
+                    }
+                    embed.setDescription(`Your task dependencies are valid:\n\n${depList}`);
+                }
+                
+                interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to validate schedule: ${error.message}`)
                 .setColor(0xff0000);
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
@@ -709,7 +792,5 @@ client.on('interactionCreate', async (interaction) => {
     }
     
 });
-
-client.login(process.env.TOKEN);
 
 client.login(process.env.TOKEN);

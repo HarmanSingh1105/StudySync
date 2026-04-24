@@ -1,0 +1,32 @@
+const { Schedule } = require('./schedule');
+const { getUserTasks, getTaskDependencies } = require('./database');
+
+function buildScheduleForUser(userId) {
+  const schedule = new Schedule();
+  const tasks = getUserTasks(userId);
+  const deps = getTaskDependencies(userId);
+
+  const jobMap = new Map();
+
+  // Create jobs
+  for (const task of tasks) {
+    const time = task.completed ? 0 : 1; // simple duration
+    const job = schedule.insert(time);
+    jobMap.set(task.id, job);
+  }
+
+  // Add edges
+  for (const dep of deps) {
+    const prereq = jobMap.get(dep.depends_on);
+    const task = jobMap.get(dep.task_id);
+
+    if (prereq && task) {
+      prereq.dependents.push(task);
+      task.inDegree++;
+    }
+  }
+
+  return schedule;
+}
+
+module.exports = { buildScheduleForUser };

@@ -1,75 +1,69 @@
 const { EmbedBuilder } = require('discord.js');
 const { getDeadlinesNeed24hReminder, getDeadlinesNeed1hReminder, mark24hReminderSent, mark1hReminderSent } = require('./database');
 
-/**
- * Background task that checks for upcoming deadline reminders every minute
- * Sends reminders 24h before and 1h before deadlines
- */
 function startDeadlineReminderLoop(client) {
     console.log('✅ Deadline reminder check loop started!');
     
+    // Check every 60 seconds
     setInterval(async () => {
         try {
             // Check for 24h reminders
-            const need24h = getDeadlinesNeed24hReminder();
-            for (const deadline of need24h) {
-                await sendDeadlineReminder(client, deadline, '24h');
+            const deadlines24h = getDeadlinesNeed24hReminder();
+            for (const deadline of deadlines24h) {
+                await sendDeadlineReminder(client, deadline, '24 hours');
                 mark24hReminderSent(deadline.id);
             }
-            
+
             // Check for 1h reminders
-            const need1h = getDeadlinesNeed1hReminder();
-            for (const deadline of need1h) {
-                await sendDeadlineReminder(client, deadline, '1h');
+            const deadlines1h = getDeadlinesNeed1hReminder();
+            for (const deadline of deadlines1h) {
+                await sendDeadlineReminder(client, deadline, '1 hour');
                 mark1hReminderSent(deadline.id);
             }
         } catch (error) {
-            console.log(`❌ Error in deadline reminder loop: ${error.message}`);
+            console.error('Error in deadline reminder loop:', error);
         }
-    }, 60000); // Check every minute
+    }, 60 * 1000); // 60 seconds
 }
 
 async function sendDeadlineReminder(client, deadline, timeframe) {
-    try {
-        const user = await client.users.fetch(deadline.user_id);
-        const embed = createDeadlineReminderEmbed(deadline, timeframe);
-        
-        // Try to send DM first
-        try {
-            await user.send({ embeds: [embed] });
-            console.log(`✅ ${timeframe} deadline reminder DM sent to ${user.username}`);
-        } catch (dmError) {
-            // DM failed, try channel
-            try {
-                const channel = await client.channels.fetch(deadline.channel_id);
-                await channel.send({ content: `<@${deadline.user_id}>`, embeds: [embed] });
-                console.log(`✅ ${timeframe} deadline reminder sent in channel`);
-            } catch (channelError) {
-                console.log(`❌ Failed to send deadline reminder: ${channelError.message}`);
-            }
-        }
-    } catch (error) {
-        console.log(`❌ Error sending deadline reminder: ${error.message}`);
-    }
-}
-
-function createDeadlineReminderEmbed(deadline, timeframe) {
     const embed = new EmbedBuilder()
-        .setTitle(`📌 Assignment Deadline Reminder - ${timeframe} away!`)
-        .setColor(0xff9900)
-        .setDescription(`**${deadline.title}**`);
-    
+        .setTitle(`⏰ Deadline Reminder: ${timeframe}`)
+        .setColor(0xff6600)
+        .addFields(
+            { name: '📌 Assignment', value: deadline.title },
+            { name: '⏱️ Time', value: `${timeframe} remaining` }
+        );
+
     if (deadline.subject) {
         embed.addFields({ name: '📚 Subject', value: deadline.subject });
     }
-    
-    embed.addFields({ name: '🕐 Due', value: deadline.due_at });
-    
     if (deadline.notes) {
         embed.addFields({ name: '📝 Notes', value: deadline.notes });
     }
-    
-    return embed;
+
+    const user = await client.users.fetch(deadline.user_id).catch(() => null);
+
+    if (user) {
+        // Try to send DM
+        try {
+            await user.send({ embeds: [embed] });
+            return;
+        } catch (error) {
+            console.error(`Could not DM user ${deadline.user_id}, trying channel:`, error.message);
+        }
+    }
+
+    // Fallback: send to channel
+    try {
+        const channel = await client.channels.fetch(deadline.channel_id).catch(() => null);
+        if (channel && channel.isTextBased()) {
+            const userMention = `<@${deadline.user_id}>`;
+            await channel.send({ content: userMention, embeds: [embed] });
+        }
+    } catch (error) {
+        console.error(`Could not send reminder to channel ${deadline.channel_id}:`, error.message);
+    }
 }
 
 module.exports = { startDeadlineReminderLoop };
