@@ -35,7 +35,7 @@ echo "CLIENT_ID=your_client_id_here" >> .env
 echo "GUILD_ID=your_server_id_here" >> .env
 
 # 3. Start the bot
-npm start
+nodemon
 ```
 
 ---
@@ -119,18 +119,8 @@ You should see no errors during installation.
 
 ## Running the Bot
 
-### Development Mode (with auto-reload)
-
 ```bash
-npm run dev
-```
-
-The bot will automatically restart when you make code changes.
-
-### Production Mode
-
-```bash
-npm start
+nodemon
 ```
 
 You should see:
@@ -141,6 +131,8 @@ YourBotName is online!
 ```
 
 The database file (`data/reminders.db`) is created automatically on first run.
+
+The bot will automatically restart when you make code changes (thanks to nodemon).
 
 ---
 
@@ -562,7 +554,7 @@ StudySync/
 
 **Error: "Client is not defined"**
 - Solution: Make sure you're running from the project directory
-- Try: `npm start` instead of `node src/index.js`
+- Try: `nodemon` instead of `node src/index.js`
 
 ### Bot Goes Online But No Commands Appear
 
@@ -574,7 +566,7 @@ StudySync/
 **"Application did not respond"**
 - Solution: Bot might have crashed
 - Check console for error messages
-- Restart the bot: `npm start`
+- Restart the bot: `nodemon`
 
 ### Reminders Not Sending
 
@@ -669,7 +661,7 @@ If you encounter issues:
 2. Review console output for error messages
 3. Verify all prerequisites are installed
 4. Make sure `.env` file is configured correctly
-5. Try restarting the bot: `npm start`
+5. Try restarting the bot: `nodemon`
 
 ---
 
