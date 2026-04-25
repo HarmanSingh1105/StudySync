@@ -291,6 +291,10 @@ const commands = [
     {
         name: 'cleardeadlines',
         description: 'Delete all your deadlines (cannot be undone)',
+    },
+    {
+        name: 'listallgroups',
+        description: "List all study groups in the server"
     }
 ];
 

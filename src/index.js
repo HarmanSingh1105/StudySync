@@ -51,8 +51,96 @@ client.on('messageCreate', async(message) => {
   }
 });
 
+    // Builder function — returns embed and rows without sending anything
+async function buildGroupPage(interaction, groupsWithRoles, page) {
+    const pageSize = 4;
+    const totalPages = Math.ceil(groupsWithRoles.length / pageSize);
+    const pageGroups = groupsWithRoles.slice(page * pageSize, (page + 1) * pageSize);
+
+    const joinedCount = groupsWithRoles.filter(g => g.hasJoined).length;
+    const notJoinedCount = groupsWithRoles.filter(g => !g.hasJoined).length;
+
+    const rows = pageGroups.map(group => {
+        const nameLabel = new ButtonBuilder()
+            .setCustomId(`group_label_${group.id}`)
+            .setLabel(group.name)
+            .setStyle(group.hasJoined ? ButtonStyle.Success : ButtonStyle.Secondary)
+            .setEmoji(group.hasJoined ? '✅' : '📖')
+            .setDisabled(true);
+
+        const row = new ActionRowBuilder().addComponents(nameLabel);
+
+        if (!group.hasJoined) {
+            const joinButton = new ButtonBuilder()
+                .setCustomId(`listall_join_${group.id}_page_${page}`)
+                .setLabel('Join')
+                .setEmoji('➕')
+                .setStyle(ButtonStyle.Primary);
+            row.addComponents(joinButton);
+        }
+
+        return row;
+    });
+
+    // Navigation row
+    const prevButton = new ButtonBuilder()
+        .setCustomId(`listall_page_${page - 1}`)
+        .setLabel('Previous')
+        .setEmoji('◀️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page === 0);
+
+    const pageCounter = new ButtonBuilder()
+        .setCustomId('page_counter')
+        .setLabel(`Page ${page + 1} of ${totalPages}`)
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true);
+
+    const nextButton = new ButtonBuilder()
+        .setCustomId(`listall_page_${page + 1}`)
+        .setLabel('Next')
+        .setEmoji('▶️')
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(page >= totalPages - 1);
+
+    rows.push(new ActionRowBuilder().addComponents(prevButton, pageCounter, nextButton));
+
+    const embed = new EmbedBuilder()
+        .setTitle('📚 Study Groups')
+        .setColor(0x5865F2)
+        .setDescription(
+            `Welcome to the study groups directory for **${interaction.guild.name}**!\n` +
+            `Browse and join groups below.\n\u200B`
+        )
+        .addFields(
+            { name: '📊 Total Groups', value: `\`\`\`${groupsWithRoles.length}\`\`\``, inline: true },
+            { name: '✅ Joined', value: `\`\`\`${joinedCount}\`\`\``, inline: true },
+            { name: '📖 Not Joined', value: `\`\`\`${notJoinedCount}\`\`\``, inline: true },
+        )
+        .setThumbnail(interaction.guild.iconURL({ dynamic: true }))
+        .setFooter({
+            text: `Showing ${page * pageSize + 1}–${Math.min((page + 1) * pageSize, groupsWithRoles.length)} of ${groupsWithRoles.length} groups · Use /creategroup to create a new group`,
+            iconURL: interaction.client.user.displayAvatarURL()
+        })
+        .setTimestamp();
+
+    return { embeds: [embed], components: rows };
+}
+
+// Helper to fetch groupsWithRoles from SQLite
+async function fetchGroupsWithRoles(interaction) {
+    const groups = listGroupsByGuild(interaction.guild.id);
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    return await Promise.all(
+        groups.map(async group => {
+            const role = await interaction.guild.roles.fetch(group.role_id).catch(() => null);
+            const hasJoined = role ? member.roles.cache.has(role.id) : false;
+            return { ...group, role, hasJoined };
+        })
+    );
+}
+
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'add') {
         const num1 = interaction.options.get('first-number').value;
@@ -1038,6 +1126,131 @@ client.on('interactionCreate', async (interaction) => {
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
     }
+
+// listallgroups command
+if (interaction.commandName === 'listallgroups') {
+    if (!interaction.inGuild() || !interaction.guild) {
+        const embed = new EmbedBuilder()
+            .setTitle('❌ Server Only Command')
+            .setDescription('`/listallgroups` can only be used inside a server.')
+            .setColor(0xff0000);
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+        const groupsWithRoles = await fetchGroupsWithRoles(interaction);
+
+        if (groupsWithRoles.length === 0) {
+            const emptyEmbed = new EmbedBuilder()
+                .setTitle('📚 Study Groups')
+                .setColor(0xff0000)
+                .setDescription('There are no study groups in this server yet!\nUse `/creategroup` to create one.')
+                .setThumbnail(interaction.guild.iconURL({ dynamic: true }))
+                .setFooter({
+                    text: 'Use /creategroup to create a new group',
+                    iconURL: interaction.client.user.displayAvatarURL()
+                })
+                .setTimestamp();
+            return await interaction.editReply({ embeds: [emptyEmbed] });
+        }
+
+        await interaction.editReply(await buildGroupPage(interaction, groupsWithRoles, 0));
+
+    } catch (error) {
+        await interaction.editReply({
+            embeds: [new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to list groups: ${error.message}`)
+                .setColor(0xff0000)]
+        });
+    }
+
+} 
+ if (interaction.isButton() && interaction.customId.startsWith('listall_page_')) {
+    await interaction.deferUpdate();
+
+    try {
+        const page = parseInt(interaction.customId.replace('listall_page_', ''));
+        const groupsWithRoles = await fetchGroupsWithRoles(interaction);
+        await interaction.editReply(await buildGroupPage(interaction, groupsWithRoles, page));
+
+    } catch (error) {
+        await interaction.followUp({
+            embeds: [new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to load page: ${error.message}`)
+                .setColor(0xff0000)],
+            ephemeral: true
+        });
+    }
+
+} else if (interaction.isButton() && interaction.customId.startsWith('listall_join_')) {
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+        const parts = interaction.customId.split('_page_');
+        const groupId = parts[0].replace('listall_join_', '');
+        const page = parts[1] ? parseInt(parts[1]) : 0;
+
+        const groups = listGroupsByGuild(interaction.guild.id);
+        const targetGroup = groups.find(g => String(g.id) === String(groupId));
+
+        if (!targetGroup) {
+            return await interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setTitle('❌ Group Not Found')
+                    .setDescription('This group no longer exists.')
+                    .setColor(0xff0000)]
+            });
+        }
+
+        const role = await interaction.guild.roles.fetch(targetGroup.role_id).catch(() => null);
+        if (!role) {
+            return await interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setTitle('❌ Group Configuration Error')
+                    .setDescription('This group is missing its role. Ask an admin to recreate the group.')
+                    .setColor(0xff0000)]
+            });
+        }
+
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+
+        if (member.roles.cache.has(role.id)) {
+            return await interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setTitle('ℹ️ Already In Group')
+                    .setDescription(`You are already a member of **${targetGroup.name}**.`)
+                    .setColor(0x0099ff)]
+            });
+        }
+
+        await member.roles.add(role, `Joined group ${targetGroup.name} via listallgroups`);
+
+        // Reply to confirm join
+        await interaction.editReply({
+            embeds: [new EmbedBuilder()
+                .setTitle('✅ Joined Group')
+                .setDescription(`You joined **${targetGroup.name}** successfully.`)
+                .addFields({ name: 'Group Role', value: `<@&${role.id}>` })
+                .setColor(0x00ff00)]
+        });
+
+        // Update the original embed to reflect the join
+        const groupsWithRoles = await fetchGroupsWithRoles(interaction);
+        await interaction.message.edit(await buildGroupPage(interaction, groupsWithRoles, page));
+
+    } catch (error) {
+        await interaction.editReply({
+            embeds: [new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to join group: ${error.message}`)
+                .setColor(0xff0000)]
+        });
+    }
+}
     
 });
 
