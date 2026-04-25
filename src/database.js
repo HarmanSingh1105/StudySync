@@ -440,6 +440,37 @@ function listGroupsByGuild(guildId) {
     return stmt.all(guildId);
 }
 
+// Get group by ID
+function getGroupById(groupId) {
+    const stmt = db.prepare(`
+        SELECT id, guild_id, name, role_id, channel_id, owner_user_id, created_at
+        FROM groups
+        WHERE id = ?
+    `);
+
+    return stmt.get(groupId);
+}
+
+// Delete a group (only owner can delete)
+function deleteGroup(groupId, userId) {
+    // Check if user is the owner
+    const stmt = db.prepare(`
+        SELECT owner_user_id FROM groups WHERE id = ?
+    `);
+
+    const group = stmt.get(groupId);
+    if (!group || group.owner_user_id !== userId) {
+        return false; // Not owner or group doesn't exist
+    }
+
+    const deleteStmt = db.prepare(`
+        DELETE FROM groups WHERE id = ?
+    `);
+
+    deleteStmt.run(groupId);
+    return true;
+}
+
 // ===== TASK DEPENDENCIES =====
 
 // Add a dependency between two tasks
@@ -561,7 +592,9 @@ module.exports = {
     clearAllDeadlines,
     createGroup,
     getGroupByName,
+    getGroupById,
     listGroupsByGuild,
+    deleteGroup,
     addTaskDependency,
     getTaskDependencies,
     clearDependenciesForTask,

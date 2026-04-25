@@ -87,6 +87,30 @@ const commands = [
         ]
     },
     {
+        name: 'deletegroup',
+        description: 'Delete a study group (group owner only)',
+        options: [
+            {
+                name: 'name',
+                description: 'The exact group name you want to delete',
+                type: ApplicationCommandOptionType.String,
+                required: true,
+            },
+        ]
+    },
+    {
+        name: 'leavegroup',
+        description: 'Leave a study group',
+        options: [
+            {
+                name: 'name',
+                description: 'The exact group name you want to leave',
+                type: ApplicationCommandOptionType.String,
+                required: true,
+            },
+        ]
+    },
+    {
         name: 'cancelreminder',
         description: 'Cancel a pending study reminder',
         options: [

@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ChannelType } = require('discord.js');
-const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName, listGroupsByGuild, addTaskDependency, getTaskDependencies, hasCyclicDependencies } = require('./database');
+const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName, getGroupById, listGroupsByGuild, deleteGroup, addTaskDependency, getTaskDependencies, hasCyclicDependencies } = require('./database');
 const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
 const { parseDeadlineDate } = require('./deadline-parser');
@@ -396,6 +396,165 @@ client.on('interactionCreate', async (interaction) => {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to join group: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+
+    // Delete group command
+    if (interaction.commandName === 'deletegroup') {
+        if (!interaction.inGuild() || !interaction.guild) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Server Only Command')
+                .setDescription('`/deletegroup` can only be used inside a server.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const groupName = interaction.options.getString('name')?.trim();
+        if (!groupName) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Invalid Group Name')
+                .setDescription('Please provide a non-empty group name.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const botMember = interaction.guild.members.me;
+        if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageRoles) || !botMember.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Missing Bot Permissions')
+                .setDescription('I need **Manage Roles** and **Manage Channels** permissions to delete a group.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        try {
+            const targetGroup = getGroupByName(interaction.guild.id, groupName);
+            if (!targetGroup) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Group Does Not Exist')
+                    .setDescription(`Group **${groupName}** does not exist.`)
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            // Check if user is the owner
+            if (targetGroup.owner_user_id !== interaction.user.id) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Permission Denied')
+                    .setDescription('Only the group owner can delete this group.')
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            // Delete the role
+            const role = await interaction.guild.roles.fetch(targetGroup.role_id).catch(() => null);
+            if (role) {
+                await role.delete('Group deleted');
+            }
+
+            // Delete the channel
+            const channel = await interaction.guild.channels.fetch(targetGroup.channel_id).catch(() => null);
+            if (channel) {
+                await channel.delete('Group deleted');
+            }
+
+            // Delete from database
+            deleteGroup(targetGroup.id, interaction.user.id);
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Group Deleted')
+                .setDescription(`Group **${targetGroup.name}** has been deleted along with its role and channel.`)
+                .setColor(0x00ff00);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to delete group: ${error.message}`)
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+
+    // Leave group command
+    if (interaction.commandName === 'leavegroup') {
+        if (!interaction.inGuild() || !interaction.guild) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Server Only Command')
+                .setDescription('`/leavegroup` can only be used inside a server.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const groupName = interaction.options.getString('name')?.trim();
+        if (!groupName) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Invalid Group Name')
+                .setDescription('Please provide a non-empty group name.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        const botMember = interaction.guild.members.me;
+        if (!botMember || !botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Missing Bot Permissions')
+                .setDescription('I need **Manage Roles** permission to remove you from a group.')
+                .setColor(0xff0000);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+
+        try {
+            const targetGroup = getGroupByName(interaction.guild.id, groupName);
+            if (!targetGroup) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Group Does Not Exist')
+                    .setDescription(`Group **${groupName}** does not exist.`)
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            const role = await interaction.guild.roles.fetch(targetGroup.role_id).catch(() => null);
+            if (!role) {
+                const embed = new EmbedBuilder()
+                    .setTitle('❌ Group Configuration Error')
+                    .setDescription('This group is missing its role. Ask an admin to recreate the group.')
+                    .setColor(0xff0000);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            const member = await interaction.guild.members.fetch(interaction.user.id);
+            if (!member.roles.cache.has(role.id)) {
+                const embed = new EmbedBuilder()
+                    .setTitle('ℹ️ Not In Group')
+                    .setDescription(`You are not a member of **${targetGroup.name}**.`)
+                    .setColor(0x0099ff);
+                interaction.reply({ embeds: [embed], ephemeral: true });
+                return;
+            }
+
+            await member.roles.remove(role, `Left group ${targetGroup.name}`);
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Left Group')
+                .setDescription(`You have left **${targetGroup.name}**.`)
+                .setColor(0x00ff00);
+            interaction.reply({ embeds: [embed], ephemeral: true });
+        } catch (error) {
+            const embed = new EmbedBuilder()
+                .setTitle('❌ Error')
+                .setDescription(`Failed to leave group: ${error.message}`)
                 .setColor(0xff0000);
             interaction.reply({ embeds: [embed], ephemeral: true });
         }
