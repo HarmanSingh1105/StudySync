@@ -693,5 +693,5 @@ All source code is ~2000 lines total, well-organized and documented.
 
 ---
 
-**Last Updated:** April 24, 2026
-**Version:** 2.0 (Complete with delete/leave group features)
+**Last Updated:** April 25, 2026
+**Version:** 1.0 (Complete with listallgroups feature)
