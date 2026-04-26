@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ChannelType } = require('discord.js');
+const { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
 const { initDatabase, addReminder, getUserReminders, deleteReminder, addTask, getUserTasks, removeTask, completeTask, clearAllTasks, addDeadline, getUserDeadlines, getUpcomingDeadlines, updateDeadline, removeDeadline, clearAllDeadlines, createGroup, getGroupByName, getGroupById, listGroupsByGuild, deleteGroup, addTaskDependency, getTaskDependencies, hasCyclicDependencies } = require('./database');
 const { parseReminderTime } = require('./reminder-parser');
 const { startReminderLoop } = require('./reminder-loop');
@@ -1238,9 +1238,14 @@ if (interaction.commandName === 'listallgroups') {
                 .setColor(0x00ff00)]
         });
 
-        // Update the original embed to reflect the join
-        const groupsWithRoles = await fetchGroupsWithRoles(interaction);
-        await interaction.message.edit(await buildGroupPage(interaction, groupsWithRoles, page));
+        // Try to update the original embed to reflect the join (non-critical)
+        try {
+            const groupsWithRoles = await fetchGroupsWithRoles(interaction);
+            await interaction.message.edit(await buildGroupPage(interaction, groupsWithRoles, page));
+        } catch (updateError) {
+            // Silently fail if we can't update the original message
+            // User already got confirmation they joined
+        }
 
     } catch (error) {
         await interaction.editReply({
