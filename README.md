@@ -423,6 +423,18 @@ Delete a study group (group owner only).
 
 Deletes the group, its role, and its channel.
 
+#### `/listallgroups`
+View all study groups in your server with pagination.
+
+Shows all available groups that you can join, with details about each group. Navigate through multiple groups if there are many.
+
+**Example:**
+```
+/listallgroups
+```
+
+Shows all study groups in the server with group owner information.
+
 ---
 
 ## Supported Time Formats
