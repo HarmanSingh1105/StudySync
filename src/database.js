@@ -5,6 +5,11 @@ const path = require('path');
 const dbPath = path.join(__dirname, '../data/reminders.db');
 const db = new Database(dbPath);
 
+// Configure for better performance and concurrency
+db.pragma('journal_mode = WAL');  // Write-Ahead Logging for better concurrency
+db.pragma('busy_timeout = 5000'); // Wait up to 5 seconds for database lock
+db.pragma('synchronous = NORMAL'); // Balance safety and performance
+
 // Initialize database schema
 function initDatabase() {
     db.exec(`
@@ -568,11 +573,56 @@ function hasCyclicDependencies(userId) {
     return false;
 }
 
+// Batch update for reminders (improves performance under load)
+function markRemindersDeliveredBatch(reminderIds) {
+    if (!reminderIds || reminderIds.length === 0) return;
+    
+    try {
+        const placeholders = reminderIds.map(() => '?').join(',');
+        const stmt = db.prepare(`
+            UPDATE reminders SET delivered = 1 WHERE id IN (${placeholders})
+        `);
+        stmt.run(...reminderIds);
+    } catch (error) {
+        console.error('Error in batch marking reminders:', error);
+    }
+}
+
+// Batch update for deadlines (improves performance under load)
+function mark24hRemindersDeliveredBatch(deadlineIds) {
+    if (!deadlineIds || deadlineIds.length === 0) return;
+    
+    try {
+        const placeholders = deadlineIds.map(() => '?').join(',');
+        const stmt = db.prepare(`
+            UPDATE deadlines SET reminder_24h_sent = 1 WHERE id IN (${placeholders})
+        `);
+        stmt.run(...deadlineIds);
+    } catch (error) {
+        console.error('Error in batch marking 24h reminders:', error);
+    }
+}
+
+function mark1hRemindersDeliveredBatch(deadlineIds) {
+    if (!deadlineIds || deadlineIds.length === 0) return;
+    
+    try {
+        const placeholders = deadlineIds.map(() => '?').join(',');
+        const stmt = db.prepare(`
+            UPDATE deadlines SET reminder_1h_sent = 1 WHERE id IN (${placeholders})
+        `);
+        stmt.run(...deadlineIds);
+    } catch (error) {
+        console.error('Error in batch marking 1h reminders:', error);
+    }
+}
+
 module.exports = {
     initDatabase,
     addReminder,
     getDueReminders,
     markReminderDelivered,
+    markRemindersDeliveredBatch,
     getUserReminders,
     deleteReminder,
     addTask,
@@ -587,6 +637,8 @@ module.exports = {
     getDeadlinesNeed1hReminder,
     mark24hReminderSent,
     mark1hReminderSent,
+    mark24hRemindersDeliveredBatch,
+    mark1hRemindersDeliveredBatch,
     updateDeadline,
     removeDeadline,
     clearAllDeadlines,
@@ -599,4 +651,5 @@ module.exports = {
     getTaskDependencies,
     clearDependenciesForTask,
     hasCyclicDependencies,
+    db,
 };

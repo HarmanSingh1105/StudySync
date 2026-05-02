@@ -27,28 +27,37 @@ client.on('clientReady', (c) => {
     startDeadlineReminderLoop(c);
 });
 
+// Error handler for Discord.js client
+client.on('error', error => {
+    console.error('❌ Discord Client Error:', error);
+});
+
 client.on('messageCreate', async(message) => {
     if (message.author.bot) {
         return;
     }
 
-    if (message.content === 'hello') {
-        message.reply('Hello, how can I help you?');
-    }
-
-    if (message.content === '!create-channel') {
     try {
-      const channel = await message.guild.channels.create({
-        name: 'new-text-channel',
-        type: ChannelType.GuildText, // Specifies a text channel
-        reason: 'Bot created this channel'
-      });
-      message.reply(`Successfully created channel: ${channel.name}`);
+        if (message.content === 'hello') {
+            message.reply('Hello, how can I help you?');
+        }
+
+        if (message.content === '!create-channel') {
+            try {
+                const channel = await message.guild.channels.create({
+                    name: 'new-text-channel',
+                    type: ChannelType.GuildText,
+                    reason: 'Bot created this channel'
+                });
+                message.reply(`Successfully created channel: ${channel.name}`);
+            } catch (error) {
+                console.error('Error creating channel:', error);
+                message.reply('There was an error creating the channel.');
+            }
+        }
     } catch (error) {
-      console.error(error);
-      message.reply('There was an error creating the channel.');
+        console.error('Error in message handler:', error);
     }
-  }
 });
 
     // Builder function — returns embed and rows without sending anything
@@ -140,17 +149,53 @@ async function fetchGroupsWithRoles(interaction) {
     );
 }
 
-client.on('interactionCreate', async (interaction) => {
-
-    if (interaction.commandName === 'add') {
-        const num1 = interaction.options.get('first-number').value;
-        const num2 = interaction.options.get('second-number').value;
-
-        interaction.reply(`The sum of ${num1} and ${num2} is ${num1 + num2}`);
+// Helper function to safely reply to interactions
+async function safeReply(interaction, content) {
+    try {
+        // Check if we can use editReply (after defer)
+        if (interaction.deferred) {
+            await interaction.editReply(content);
+        } else if (!interaction.replied) {
+            await interaction.reply(content);
+        } else {
+            // Already replied, use followUp
+            await interaction.followUp(content);
+        }
+    } catch (error) {
+        console.error('Error sending reply:', error.message);
+        // Fallback: try followUp if editReply/reply failed
+        try {
+            await interaction.followUp(content);
+        } catch (e) {
+            console.error('Fallback followUp also failed:', e.message);
+        }
     }
-    
-    // Study remind command
-    if (interaction.commandName === 'studyremind') {
+}
+
+client.on('interactionCreate', async (interaction) => {
+    // Only attempt to defer for actual slash commands
+    if (interaction.isChatInputCommand()) {
+        try {
+            // Silent attempt - if it fails, safeReply will handle it
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.deferReply();
+            }
+        } catch (error) {
+            // Silently fail - the interaction is in an unexpected state
+            // safeReply will handle sending the response
+        }
+    }
+
+    try {
+        if (interaction.commandName === 'add') {
+            const num1 = interaction.options.get('first-number').value;
+            const num2 = interaction.options.get('second-number').value;
+
+            await safeReply(interaction, `The sum of ${num1} and ${num2} is ${num1 + num2}`);
+        }
+        
+        // Study remind command
+        if (interaction.commandName === 'studyremind') {
         const title = interaction.options.getString('title');
         const reminderTime = interaction.options.getString('reminder_time');
         const notes = interaction.options.getString('notes');
@@ -163,7 +208,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Invalid Time Format')
                 .setDescription(result.error)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed] });
+            await safeReply(interaction, { embeds: [embed] });
             return;
         }
 
@@ -194,13 +239,13 @@ client.on('interactionCreate', async (interaction) => {
             embed.addFields({ name: 'Reminder ID', value: `\`${reminderId}\`` });
             embed.setFooter({ text: "You'll receive a DM when it's time! (or a channel message if DMs are disabled)" });
 
-            interaction.reply({ embeds: [embed] });
+            await safeReply(interaction, { embeds: [embed] });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to create reminder: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed] });
+            await safeReply(interaction, { embeds: [embed] });
         }
     }
 
@@ -215,7 +260,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('📚 Your Reminders')
                     .setDescription('You have no pending reminders!')
                     .setColor(0x0099ff);
-                interaction.reply({ embeds: [embed] });
+                await safeReply(interaction, { embeds: [embed] });
                 return;
             }
 
@@ -223,8 +268,17 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('📚 Your Pending Reminders')
                 .setColor(0x0099ff);
 
-            for (const [id, title, notes, dueAt] of reminders) {
-                let fieldValue = `**When:** ${dueAt}\n**ID:** \`${id}\``;
+            for (const { id, title, notes, due_at: dueAt } of reminders) {
+                const date = new Date(dueAt);
+                const formattedTime = date.toLocaleString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric', 
+                    hour: 'numeric', 
+                    minute: '2-digit',
+                    meridiem: 'short'
+                });
+                let fieldValue = `**When:** ${formattedTime}\n**ID:** \`${id}\``;
                 if (notes) {
                     fieldValue += `\n**Notes:** ${notes}`;
                 }
@@ -233,13 +287,13 @@ client.on('interactionCreate', async (interaction) => {
 
             embed.setFooter({ text: 'Use /cancelreminder to delete one.' });
 
-            interaction.reply({ embeds: [embed] });
+            await safeReply(interaction, { embeds: [embed] });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to fetch reminders: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed] });
+            await safeReply(interaction, { embeds: [embed] });
         }
     }
 
@@ -254,20 +308,20 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('✅ Reminder Cancelled')
                     .setDescription(`Reminder \`${reminderId}\` has been deleted.`)
                     .setColor(0x00ff00);
-                interaction.reply({ embeds: [embed] });
+                await safeReply(interaction, { embeds: [embed] });
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Not Found')
                     .setDescription(`Reminder \`${reminderId}\` not found or doesn't belong to you.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed] });
+                await safeReply(interaction, { embeds: [embed] });
             }
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to cancel reminder: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed] });
+            await safeReply(interaction, { embeds: [embed] });
         }
     }
 
@@ -278,7 +332,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Server Only Command')
                 .setDescription('`/creategroup` can only be used inside a server.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -288,7 +342,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Invalid Group Name')
                 .setDescription('Please provide a non-empty group name.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -298,7 +352,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Bot State Error')
                 .setDescription('Could not verify bot permissions in this server.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -313,7 +367,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Missing Bot Permissions')
                 .setDescription(`I need these permissions to create a group: **${missing.join(', ')}**.`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -324,7 +378,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Group Already Exists')
                     .setDescription(`A group named **${groupName}** already exists in this server.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -390,13 +444,13 @@ client.on('interactionCreate', async (interaction) => {
                     { name: 'Channel', value: `<#${createdChannel.id}>`, inline: true }
                 );
 
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to create group: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
 
@@ -407,7 +461,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Server Only Command')
                 .setDescription('`/joingroup` can only be used inside a server.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -417,7 +471,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Invalid Group Name')
                 .setDescription('Please provide a non-empty group name.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -427,7 +481,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Missing Bot Permissions')
                 .setDescription('I need **Manage Roles** permission to add you to a group.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -438,7 +492,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Group Does Not Exist')
                     .setDescription('No groups exist in this server yet. Create one with `/creategroup` first.')
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -448,7 +502,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Group Does Not Exist')
                     .setDescription(`Group **${groupName}** does not exist.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -458,7 +512,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Group Configuration Error')
                     .setDescription('This group is missing its role. Ask an admin to recreate the group.')
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -468,7 +522,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('ℹ️ Already In Group')
                     .setDescription(`You are already a member of **${targetGroup.name}**.`)
                     .setColor(0x0099ff);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -479,13 +533,13 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(`You joined **${targetGroup.name}** successfully.`)
                 .addFields({ name: 'Group Role', value: `<@&${role.id}>` })
                 .setColor(0x00ff00);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to join group: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
 
@@ -496,7 +550,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Server Only Command')
                 .setDescription('`/deletegroup` can only be used inside a server.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -506,7 +560,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Invalid Group Name')
                 .setDescription('Please provide a non-empty group name.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -516,7 +570,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Missing Bot Permissions')
                 .setDescription('I need **Manage Roles** and **Manage Channels** permissions to delete a group.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -527,7 +581,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Group Does Not Exist')
                     .setDescription(`Group **${groupName}** does not exist.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -537,7 +591,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Permission Denied')
                     .setDescription('Only the group owner can delete this group.')
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -560,13 +614,13 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('✅ Group Deleted')
                 .setDescription(`Group **${targetGroup.name}** has been deleted along with its role and channel.`)
                 .setColor(0x00ff00);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to delete group: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
 
@@ -577,7 +631,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Server Only Command')
                 .setDescription('`/leavegroup` can only be used inside a server.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -587,7 +641,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Invalid Group Name')
                 .setDescription('Please provide a non-empty group name.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -597,7 +651,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Missing Bot Permissions')
                 .setDescription('I need **Manage Roles** permission to remove you from a group.')
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
 
@@ -608,7 +662,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Group Does Not Exist')
                     .setDescription(`Group **${groupName}** does not exist.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -618,7 +672,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Group Configuration Error')
                     .setDescription('This group is missing its role. Ask an admin to recreate the group.')
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -628,7 +682,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('ℹ️ Not In Group')
                     .setDescription(`You are not a member of **${targetGroup.name}**.`)
                     .setColor(0x0099ff);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -638,13 +692,13 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('✅ Left Group')
                 .setDescription(`You have left **${targetGroup.name}**.`)
                 .setColor(0x00ff00);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to leave group: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     // ===== STUDY TO-DO LIST COMMANDS =====
@@ -673,13 +727,13 @@ client.on('interactionCreate', async (interaction) => {
                 embed.addFields({ name: '📅 Due Date', value: dueDate });
             }
 
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to add task: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
 
@@ -693,7 +747,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('📝 Your Tasks')
                     .setDescription('You have no tasks yet! Use `/addtask` to add one.')
                     .setColor(0x0099ff);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
 
@@ -714,13 +768,13 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             embed.setDescription(taskList);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to load tasks: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
 
@@ -736,20 +790,20 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('✅ Task Removed')
                     .setDescription(`Task \`${taskId}\` has been deleted.`)
                     .setColor(0x00ff00);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Task Not Found')
                     .setDescription(`Task \`${taskId}\` not found. Use \`/tasks\` to see your task IDs.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             }
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to remove task: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
 
@@ -765,20 +819,20 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('✅ Task Completed!')
                     .setDescription(`Task \`${taskId}\` marked as complete. Great work!`)
                     .setColor(0x00ff00);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Task Not Found')
                     .setDescription(`Task \`${taskId}\` not found. Use \`/tasks\` to see your task IDs.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             }
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to complete task: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
 
@@ -791,13 +845,13 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('🗑️ All Tasks Cleared')
                 .setDescription('All your tasks have been deleted.')
                 .setColor(0xff9900);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to clear tasks: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -817,20 +871,20 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('⚠️ Circular Dependency Detected!')
                     .setDescription(`Task \`${taskId}\` → Task \`${dependsOn}\` creates a cycle.`)
                     .setColor(0xff9900);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('✅ Dependency Added')
                     .setDescription(`Task \`${taskId}\` now depends on Task \`${dependsOn}\`.`)
                     .setColor(0x00ff00);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             }
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to add dependency: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -842,7 +896,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Circular Dependencies Found')
                     .setDescription('You have circular task dependencies. Resolve them first!')
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             } else {
                 const dependencies = getTaskDependencies(interaction.user.id);
                 const embed = new EmbedBuilder()
@@ -859,14 +913,14 @@ client.on('interactionCreate', async (interaction) => {
                     embed.setDescription(`Your task dependencies are valid:\n\n${depList}`);
                 }
                 
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             }
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to validate schedule: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -886,7 +940,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('❌ Invalid Date Format')
                 .setDescription(result.error)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
             return;
         }
         
@@ -919,13 +973,13 @@ client.on('interactionCreate', async (interaction) => {
             embed.addFields({ name: 'Deadline ID', value: `\`${deadlineId}\`` });
             embed.setFooter({ text: 'You\'ll get reminders 24h and 1h before the deadline!' });
             
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to add deadline: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -939,7 +993,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('📌 Your Deadlines')
                     .setDescription('You have no deadlines yet! Use `/adddeadline` to add one.')
                     .setColor(0x0099ff);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
             
@@ -966,13 +1020,13 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             embed.setDescription(deadlineList);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to load deadlines: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -986,7 +1040,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('📭 Upcoming Deadlines')
                     .setDescription('No deadlines due within the next 7 days!')
                     .setColor(0x00ff00);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
             
@@ -1011,13 +1065,13 @@ client.on('interactionCreate', async (interaction) => {
             }
             
             embed.setDescription(deadlineList);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to load upcoming deadlines: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -1033,20 +1087,20 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('✅ Deadline Removed')
                     .setDescription(`Deadline \`${deadlineId}\` has been deleted.`)
                     .setColor(0x00ff00);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Deadline Not Found')
                     .setDescription(`Deadline \`${deadlineId}\` not found. Use `/deadlines` to see your deadline IDs.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             }
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to remove deadline: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -1071,7 +1125,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setTitle('❌ Invalid Date Format')
                     .setDescription(result.error)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
                 return;
             }
             updates.due_at = result.dueTime.toISOString();
@@ -1091,20 +1145,20 @@ client.on('interactionCreate', async (interaction) => {
                 if (newSubject) embed.addFields({ name: '📚 New Subject', value: newSubject });
                 if (newNotes) embed.addFields({ name: '📝 New Notes', value: newNotes });
                 
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             } else {
                 const embed = new EmbedBuilder()
                     .setTitle('❌ Deadline Not Found')
                     .setDescription(`Deadline \`${deadlineId}\` not found or doesn't belong to you.`)
                     .setColor(0xff0000);
-                interaction.reply({ embeds: [embed], ephemeral: true });
+                await safeReply(interaction, { embeds: [embed], ephemeral: true });
             }
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to update deadline: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await safeReply(interaction, { embeds: [embed], ephemeral: true });
         }
     }
     
@@ -1117,27 +1171,26 @@ client.on('interactionCreate', async (interaction) => {
                 .setTitle('🗑️ All Deadlines Cleared')
                 .setDescription('All your deadlines have been deleted.')
                 .setColor(0xff9900);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await await safeReply(interaction, { embeds: [embed] });
         } catch (error) {
             const embed = new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to clear deadlines: ${error.message}`)
                 .setColor(0xff0000);
-            interaction.reply({ embeds: [embed], ephemeral: true });
+            await await safeReply(interaction, { embeds: [embed] });
         }
     }
 
 // listallgroups command
 if (interaction.commandName === 'listallgroups') {
+
     if (!interaction.inGuild() || !interaction.guild) {
         const embed = new EmbedBuilder()
             .setTitle('❌ Server Only Command')
             .setDescription('`/listallgroups` can only be used inside a server.')
             .setColor(0xff0000);
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return await await safeReply(interaction, { embeds: [embed] });
     }
-
-    await interaction.deferReply({ ephemeral: true });
 
     try {
         const groupsWithRoles = await fetchGroupsWithRoles(interaction);
@@ -1153,13 +1206,13 @@ if (interaction.commandName === 'listallgroups') {
                     iconURL: interaction.client.user.displayAvatarURL()
                 })
                 .setTimestamp();
-            return await interaction.editReply({ embeds: [emptyEmbed] });
+            return await safeReply(interaction, { embeds: [emptyEmbed] });
         }
 
-        await interaction.editReply(await buildGroupPage(interaction, groupsWithRoles, 0));
+        await safeReply(interaction, await buildGroupPage(interaction, groupsWithRoles, 0));
 
     } catch (error) {
-        await interaction.editReply({
+        await safeReply(interaction, {
             embeds: [new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to list groups: ${error.message}`)
@@ -1174,7 +1227,7 @@ if (interaction.commandName === 'listallgroups') {
     try {
         const page = parseInt(interaction.customId.replace('listall_page_', ''));
         const groupsWithRoles = await fetchGroupsWithRoles(interaction);
-        await interaction.editReply(await buildGroupPage(interaction, groupsWithRoles, page));
+        await safeReply(interaction, await buildGroupPage(interaction, groupsWithRoles, page));
 
     } catch (error) {
         await interaction.followUp({
@@ -1187,8 +1240,6 @@ if (interaction.commandName === 'listallgroups') {
     }
 
 } else if (interaction.isButton() && interaction.customId.startsWith('listall_join_')) {
-    await interaction.deferReply({ ephemeral: true });
-
     try {
         const parts = interaction.customId.split('_page_');
         const groupId = parts[0].replace('listall_join_', '');
@@ -1198,7 +1249,7 @@ if (interaction.commandName === 'listallgroups') {
         const targetGroup = groups.find(g => String(g.id) === String(groupId));
 
         if (!targetGroup) {
-            return await interaction.editReply({
+            return await safeReply(interaction, {
                 embeds: [new EmbedBuilder()
                     .setTitle('❌ Group Not Found')
                     .setDescription('This group no longer exists.')
@@ -1208,7 +1259,7 @@ if (interaction.commandName === 'listallgroups') {
 
         const role = await interaction.guild.roles.fetch(targetGroup.role_id).catch(() => null);
         if (!role) {
-            return await interaction.editReply({
+            return await safeReply(interaction, {
                 embeds: [new EmbedBuilder()
                     .setTitle('❌ Group Configuration Error')
                     .setDescription('This group is missing its role. Ask an admin to recreate the group.')
@@ -1219,7 +1270,7 @@ if (interaction.commandName === 'listallgroups') {
         const member = await interaction.guild.members.fetch(interaction.user.id);
 
         if (member.roles.cache.has(role.id)) {
-            return await interaction.editReply({
+            return await safeReply(interaction, {
                 embeds: [new EmbedBuilder()
                     .setTitle('ℹ️ Already In Group')
                     .setDescription(`You are already a member of **${targetGroup.name}**.`)
@@ -1230,7 +1281,7 @@ if (interaction.commandName === 'listallgroups') {
         await member.roles.add(role, `Joined group ${targetGroup.name} via listallgroups`);
 
         // Reply to confirm join
-        await interaction.editReply({
+        await safeReply(interaction, {
             embeds: [new EmbedBuilder()
                 .setTitle('✅ Joined Group')
                 .setDescription(`You joined **${targetGroup.name}** successfully.`)
@@ -1248,7 +1299,7 @@ if (interaction.commandName === 'listallgroups') {
         }
 
     } catch (error) {
-        await interaction.editReply({
+        await safeReply(interaction, {
             embeds: [new EmbedBuilder()
                 .setTitle('❌ Error')
                 .setDescription(`Failed to join group: ${error.message}`)
@@ -1256,7 +1307,32 @@ if (interaction.commandName === 'listallgroups') {
         });
     }
 }
-    
+    } catch (error) {
+        // Catch-all error handler for any uncaught errors in the interaction handler
+        console.error('❌ Unhandled error in interaction:', error);
+        try {
+            await safeReply(interaction, {
+                embeds: [new EmbedBuilder()
+                    .setTitle('❌ Unexpected Error')
+                    .setDescription('The bot encountered an error processing your command. Please try again.')
+                    .setColor(0xff0000)
+                ]
+            });
+        } catch (e) {
+            console.error('Error sending error message:', e);
+        }
+    }
+
+});
+
+// Global error handlers to prevent crashes
+process.on('unhandledRejection', error => {
+    console.error('❌ Unhandled Promise Rejection:', error);
+});
+
+process.on('uncaughtException', error => {
+    console.error('❌ Uncaught Exception:', error);
+    console.error('Bot may need to restart to recover fully');
 });
 
 client.login(process.env.TOKEN);
